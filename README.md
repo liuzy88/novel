@@ -3,6 +3,9 @@
 ## 运行说明
 
 ```bash
+# 一键启动
+make
+
 # 不输入txt打开设置页面，并将设置保存到config
 python main.py
 

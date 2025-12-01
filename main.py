@@ -165,7 +165,7 @@ def render(book: Book, current_idx: int, player: Player, config: Config) -> None
 
 
 def read_key(timeout: float | None = None) -> Optional[str]:
-    """读取按键，支持超时返回 None。"""
+    """读取按键，支持超时返回 None。方向键解析 ESC+[A/B/C/D 和 ESC+O+A/B/C/D。"""
     if os.name == "nt":
         import msvcrt
 
@@ -189,23 +189,20 @@ def read_key(timeout: float | None = None) -> Optional[str]:
     old_settings = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
-        rlist, _, _ = select.select([fd], [], [], timeout)
-        if not rlist:
+        data = _read_posix_bytes(fd, timeout)
+        if not data:
             return None
-        ch1 = sys.stdin.read(1)
-        if ch1 == "\x1b":
-            if select.select([fd], [], [], 0.01)[0]:
-                ch2 = sys.stdin.read(1)
-                if ch2 == "[" and select.select([fd], [], [], 0.01)[0]:
-                    ch3 = sys.stdin.read(1)
-                    mapping = {"A": "UP", "B": "DOWN", "C": "RIGHT", "D": "LEFT"}
-                    return mapping.get(ch3, "")
-            return "ESC"
-        if ch1 == " ":
-            return "SPACE"
-        if ch1 in {"\x03", "\x04"}:
+        first = data[0]
+        if first in {3, 4}:  # Ctrl+C / Ctrl+D
             raise KeyboardInterrupt
-        return ch1
+        if first == 0x1B:  # ESC
+            return _parse_escape_sequence(data)
+        if first == 0x20:
+            return "SPACE"
+        try:
+            return chr(first)
+        except ValueError:
+            return None
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
@@ -220,6 +217,39 @@ def _parse_windows_key(ch: bytes, msvcrt_module) -> str:
     if ch == b" ":
         return "SPACE"
     return ch.decode(errors="ignore")
+
+
+def _read_posix_bytes(fd: int, timeout: float | None) -> bytes | None:
+    """在原始模式下读取尽可能多的按键字节，避免被 Python 的缓冲吞掉后续序列。"""
+    import select
+
+    rlist, _, _ = select.select([fd], [], [], timeout)
+    if not rlist:
+        return None
+    data = os.read(fd, 32)
+    end_time = time.time() + 0.05
+    while time.time() < end_time:
+        r2, _, _ = select.select([fd], [], [], 0.005)
+        if not r2:
+            break
+        data += os.read(fd, 32)
+    return data
+
+
+def _parse_escape_sequence(data: bytes) -> Optional[str]:
+    """解析 POSIX 下的方向键转义序列。"""
+    if len(data) == 1:
+        return "ESC"
+    try:
+        seq = data.decode("utf-8", errors="ignore")
+    except Exception:
+        return "ESC"
+    if seq.startswith("\x1b[") or seq.startswith("\x1bO"):
+        mapping = {"A": "UP", "B": "DOWN", "C": "RIGHT", "D": "LEFT"}
+        for ch in seq[2:]:
+            if ch.isalpha():
+                return mapping.get(ch)
+    return "ESC"
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
