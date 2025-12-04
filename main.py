@@ -100,6 +100,12 @@ def reading_mode(txt_path: str) -> None:
                     redraw = True
 
             player.refresh_state()
+            if prev_state == "PLAYING" and player.state == "STOPPED" and not manual_stop:
+                if current_idx < len(book.segments) - 1:
+                    current_idx += 1
+                    _preload_and_play(book, current_idx, config, player, autoplay=True)
+                    save_progress(resolved_path, config.split_type, current_idx)
+                    redraw = True
             if (
                 prev_state == "PLAYING"
                 and player.state == "STOPPED"
