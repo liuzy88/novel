@@ -63,6 +63,7 @@ def reading_mode(txt_path: str) -> None:
     prev_state = player.state
     redraw = True
     manual_stop = False
+    finished_all = False
 
     try:
         while True:
@@ -99,19 +100,23 @@ def reading_mode(txt_path: str) -> None:
                     redraw = True
 
             player.refresh_state()
-            if prev_state == "PLAYING" and player.state == "STOPPED" and not manual_stop:
-                if current_idx < len(book.segments) - 1:
-                    current_idx += 1
-                    _preload_and_play(book, current_idx, config, player, autoplay=True)
-                    save_progress(resolved_path, config.split_type, current_idx)
-                    redraw = True
+            if (
+                prev_state == "PLAYING"
+                and player.state == "STOPPED"
+                and not manual_stop
+                and current_idx == len(book.segments) - 1
+            ):
+                # 最后一段自然播放结束，将进度重置到开头
+                save_progress(resolved_path, config.split_type, 0)
+                finished_all = True
             if player.state != prev_state:
                 redraw = True
             prev_state = player.state
     except KeyboardInterrupt:
         player.stop()
         print("\n已退出。")
-    save_progress(resolved_path, config.split_type, current_idx)
+    final_index = 0 if finished_all else current_idx
+    save_progress(resolved_path, config.split_type, final_index)
 
 
 def _preload_neighbors(book: Book, index: int, config: Config) -> None:
